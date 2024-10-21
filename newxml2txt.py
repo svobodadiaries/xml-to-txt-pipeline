@@ -1,45 +1,62 @@
 import xml.etree.ElementTree as ET
 
-def xml_to_txt(xml_file, txt_file, indent_level):
+# Helper method to format text with specified indentation and spacing
+def format_text(indent_level, spacing_level, text):
+    indent = ' ' * indent_level
+    spacing = '\n' * spacing_level
+    return f"{spacing}{indent}{text.strip()}"
+
+def xml_to_txt(xml_file, txt_file, initial_indent_level, initial_spacing_level):
     # Parse the XML file
     tree = ET.parse(xml_file)
     root = tree.getroot()
 
     # Open the text file in write mode
     with open(txt_file, 'w') as file:
-        initial_spacing = 6
-        file.write('\n' * initial_spacing)
-        # Recursively extract text from the XML tree
-        def extract_text(element, current_indent=indent_level):
-            indent = ' ' * current_indent
+        # initial indentation and spacing (at start of file)
+        file.write(format_text(initial_indent_level, initial_spacing_level, ''))
+        # Recursively extract text from XML tree
+        def extract_text(element, indent_level=10, spacing_level=1):
             # For specific elements, write the corresponding text
-            if element.tag in ['title', 'p', 'name', 'date', 'head']:
+            if element.tag in ['title', 'list', 'revisionDesc']:
                 if element.text:
-                    file.write(indent + element.text.strip() + '\n')
-            if element.tag in ['author']:
+                    formatted_text = format_text(indent_level, spacing_level, element.text)
+                    file.write(formatted_text)
+            if element.tag in ['p', 'head']:
                 if element.text:
-                    spacing(current_indent, spacing_level = 1)
-                    file.write(indent + element.text.strip() + '\n')
+                    formatted_text = format_text(indent_level+2, spacing_level, element.text)
+                    file.write(formatted_text)
+            if element.tag in ['author', 'date']:
+                if element.text:
+                    formatted_text = format_text(indent_level, 2, element.text)
+                    file.write(formatted_text)
+            if element.tag in ['name']:
+                if element.text:
+                    formatted_text = format_text(indent_level+2, 2, element.text)
+                    file.write(formatted_text)
             if element.tag in ['resp']:
                 if element.text:
-                    file.write(indent + '\n' * 2 + indent + element.text.strip() + '\n')
+                    formatted_text = format_text(indent_level+2, 3, element.text)
+                    file.write(formatted_text)
+            if element.tag in ['distributor', 'idno', 'bibl', 'projectDesc']:
+                if element.text:
+                    formatted_text = format_text(indent_level, 3, element.text)
+                    file.write(formatted_text)
+            if element.tag in ['availability']:
+                if element.text:
+                    formatted_text = format_text(indent_level+2, 2, element.text)
+                    file.write(formatted_text)
             # Recursively extract text from children
             for child in element:
                 extract_text(child)
 
             # Handle element tail text if present
             if element.tail:
-                file.write(indent + element.tail.strip() + '\n')
-    
-    def spacing(current_indent=indent_level, spacing_level):
-        indent = ' ' * current_indent
-        for x in spacing:
-
-            file.write(indent + '\n')
-
+                file.write(element.tail.strip()+ '\n')
         # Start extracting from the root element
         extract_text(root)
-# Usage example
-xml_file = '/Users/chelsea/SDP files/SDP/texts/d47pt1.xml' #may need to copy pathname
+
+# Usage example, use pathname
+xml_file = '/Users/chelsea/SDP files/SDP/texts/d47pt1.xml' 
 txt_file = '/Users/chelsea/SDP files/SDP/texts/d47pt1me.txt'
-xml_to_txt(xml_file, txt_file, indent_level=10)
+xml_to_txt(xml_file, txt_file, initial_indent_level=10, initial_spacing_level=4)
