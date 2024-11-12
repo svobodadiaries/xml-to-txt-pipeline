@@ -81,30 +81,24 @@ def xml_to_txt(xml_file, txt_file, words_to_remove):
             for word in words_to_remove:
                 text = text.replace(word, '')
             return text
-        
-        # Finds and stores margin notes with their page numbers
-        def extract_margin_notes(element):
-            margin_set = {}  # Dictionary to store notes with page numbers
-            # Search for all <note> elements that have a 'place' attribute set to 'margin'
-            place = [note for note in root.findall('.//tei:note[@place]', namespaces=ns) if 'place' in note.attrib]
-            for note in place:
-                place_attribute = note.attrib.get('place', '')
-                if 'margin' in place_attribute:
-                    page_number = note.attrib.get('place', '').split()[-1] if place_attribute else 'unknown'  # Extract page number from 'place' attribute
-                    margin_text = note.text.strip() if note.text else ''
-                
-                print(f"Found margin note: {margin_text} on page {page_number}") #Checking margin search is correct
-                
-                if page_number not in margin_set:
-                    margin_set[page_number] = []
-                margin_set[page_number].append(margin_text)
-
-            return margin_set
 
         # Open text file in write mode
         with open(txt_file, 'w') as file:
             # Recursively extract & clean text from XML tree
-            def extract_text(element, margin_set):
+            def extract_text(element):
+                # Check for <div> entry_notes containing margin text
+                if element.tag == '{http://www.tei-c.org/ns/1.0}div' and element.attrib.get("type") == "entry_notes":
+                    place_note = [note for note in root.findall('.//tei:note[@place]', namespaces=ns) if 'place' in note.attrib]
+                    for note in place_note:
+                        place = note.attrib.get('place', '')
+                        text = note.text.strip() if note.text else ""
+                        # Get page number from the "place" attribute
+                        if "page" in place:
+                            page_number = place.split("page")[-1].strip()
+                            # Check if (page_number, text) is in matched_set
+                            if (page_number, text) in matched_notes:
+                                return #stop processing
+                
                 # If element has text, clean and write into TXT
                 if element.text:
                     clean_text = remove_words(element.text, words_to_remove)
