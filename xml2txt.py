@@ -1,119 +1,133 @@
 # Author: Chelsea Lee
 # The xml2txt converts TEI-XML files to TXT files
 # It excludes certain structural tags in the TXT found in the XML
-# Removes margin text when it is emphasized in main page text
-# Output: States all matched margin notes and its page number, confirms TXT file is generated
+# Removes margin text when it is emphasized in main page text by entry
+# Output: States all matched margin notes and its page number, confirms TXT file is generated, shows matched/unmatched margins
 # To run this program, input your specific pathname for the XML and TXT file
 
 import xml.etree.ElementTree as ET
+from xml.etree.ElementTree import SubElement, ElementTree, tostring
 ns = {'tei': 'http://www.tei-c.org/ns/1.0'}
-tree = ET.parse('/Users/chelsea/SDP files/SDP/texts/diary55SHORT.xml')
+# Set desired XML, TXT using pathname
+xml_file = '/Users/chelsea/SDP files/SDP/texts/diary55SHORT.xml' #REPLACE WITH OWN PATHNAME
+txt_file = '/Users/chelsea/SDP files/SDP/texts/diary55SHORT.txt' #REPLACE WITH OWN PATHNAME
+words_to_remove = ['[torn]', '[struck through]', '[strikethrough]', '[illegible]', '[crossed out]', '[Arabic]'] # List of words to exclude in TXT
+tree = ET.parse(xml_file)
 root = tree.getroot()
 
-def extract_margin_notes(element):
-            margin_notes = {}  # Dictionary to store notes with page numbers
-            # Look for all <note> elements that have a 'place' attribute set to 'margin'
-            notes_with_place = [note for note in root.findall('.//tei:note[@place]', namespaces=ns) if 'place' in note.attrib]
-            for note in notes_with_place:
-                place_attribute = note.attrib.get('place', '')
-                if 'margin' in place_attribute:
-                    # Get page number (last part after 'page')
-                    page_number = note.attrib.get('place', '').split()[-1] if place_attribute else 'unknown'  # Extract page number from 'place' attribute
-                    note_text = note.text.strip() if note.text else ''
-                # Store note with page number
-                if page_number not in margin_notes:
-                    margin_notes[page_number] = []
-                margin_notes[page_number].append(note_text)
+# Finds margin texts from XML and organizes by their entry number
+# Returns: margin_notes (dict)
+    # Key: 'n' attribute (entry number)
+    # Values: margin text content
+def extract_margin_notes(root, ns):
+    margin_notes = {}
+    current_n = None  # Tracks current entry
 
-            # Return collected margin notes
-            return margin_notes
+    for elem in root.iter():
+        # Get entry number
+        if elem.tag == '{http://www.tei-c.org/ns/1.0}div' and elem.attrib.get("type") == "entry":
+            current_n = elem.attrib.get("n")
+        # Get margin text, add to margin_notes
+        elif elem.tag == '{http://www.tei-c.org/ns/1.0}note' and current_n:
+            if 'place' in elem.attrib and 'margin' in elem.attrib['place']:
+                note_text = ''.join(elem.itertext()).strip()
+                if current_n:
+                    margin_notes[current_n] = note_text
 
-# Helper method to store matched margin text and page numbers
-def store_match(matched_set, page_number, margin_text):
-    matched_set.add((page_number, margin_text))
+    return margin_notes
 
-margin_notes = extract_margin_notes(root)
-matched_notes = set()  # Set to store matched notes
+def store_match(matched_notes, key, margin_text):
+    matched_notes.add((key, margin_text))
+def store_unmatched(unmatched_notes, key, margin_text):
+    unmatched_notes.add((key, margin_text))
 
-current_page_text = ""
-current_page_number = None
-recording_text = False
+# Finds match/unmatch margin_notes in text content of entry
+# Returns: matched_notes (matched margin notes), unmatched_notes (unmatched margin notes)
+def find_matches(root, ns):
+    margin_notes = extract_margin_notes(root, ns)
+    matched_notes = set()
+    processed_entries = set()
+    unmatched_notes = set()
+    current_page_text = ""
+    current_n = None
 
-for elem in root.iter():
-    # Check if element is a page break
-    if elem.tag == '{http://www.tei-c.org/ns/1.0}pb' and 'n' in elem.attrib:
-        # If there's an ongoing page, check for a match before moving to the next page
-        if current_page_number and current_page_number in margin_notes:
-            margin_text = ' '.join(margin_notes[current_page_number])
-            if margin_text in current_page_text:
-                store_match(matched_notes, current_page_number, margin_text)
-        
-        # Reset for new page
-        current_page_number = elem.attrib['n']
-        current_page_text = ""
-        recording_text = False
+    for elem in root.iter():
+        # Checks for margin text matches of current page
+        if elem.tag == '{http://www.tei-c.org/ns/1.0}pb' and 'n' in elem.attrib:
+            if current_n and current_n in margin_notes:
+                margin_text = ''.join(margin_notes[current_n])
+                if margin_text in current_page_text:
+                    print(f"Match found for entry n={current_n}")
+                    store_match(matched_notes, current_n, margin_text)
+                    processed_entries.add(current_n)
+  
+            # Reset for new page
+            current_page_text = ""
 
-    # Gather text for the current page (skip <pb> tags themselves)
-    elif current_page_number and current_page_number in margin_notes:
-        if elem.tag == '{http://www.tei-c.org/ns/1.0}lb' and 'n' in elem.attrib and elem.attrib['n'] == "1" and not recording_text:
-            recording_text = True
-    if recording_text and elem.tag != '{http://www.tei-c.org/ns/1.0}pb': 
-        current_page_text += ''.join(elem.itertext()).strip() + " "
+        # Accumulates all text within the entry
+        if elem.tag == '{http://www.tei-c.org/ns/1.0}div' and elem.attrib.get("type") == "entry":
+            current_n = elem.attrib.get("n")
+            entry_text = ''.join([t for t in elem.itertext() if t.strip()])
+            current_page_text += ' ' + entry_text
 
-# Final check for the last page after exiting the loop
-if current_page_number and current_page_number in margin_notes:
-    margin_text = ' '.join(margin_notes[current_page_number])
-    if margin_text in current_page_text:
-        store_match(matched_notes, current_page_number, margin_text)
+    # Final check of last page
+    if current_n and current_n in margin_notes:
+        margin_text = ' '.join(margin_notes[current_n])
+        if margin_text in current_page_text:
+            store_match(matched_notes, current_n, margin_text)
+            processed_entries.add(current_n)
 
-print("All matched margin notes and their page numbers:")
-for page, note in matched_notes:
-    print(f"Page {page}: {note}")
+    # Stores all unmatched margin texts by comparing margin_notes's n with processed_entries
+    for n, margin_text in margin_notes.items():
+        if n not in processed_entries:
+            store_unmatched(unmatched_notes, n, margin_text)
 
+    return matched_notes, unmatched_notes
+
+matched_notes, _ = find_matches(root, ns)
+print("Matched Notes:", matched_notes)
+_, unmatched_notes = find_matches(root, ns)
+print("Unmatched Notes:", unmatched_notes)
+
+# Reads XML, extracts textual content, removes specified tags, and writes cleaned text to a new TXT file
+# Output: TXT file containing cleaned and formatted textual content from XML
 def xml_to_txt(xml_file, txt_file, words_to_remove):
     try:
         # Parse the XML file
         tree = ET.parse(xml_file)
         root = tree.getroot()
         
-        # Helper method to exclude specific words found in XML from TXT
+        # Helper method to exclude specific words found in XML from TXT and replace with empty string
         def remove_words(text, words_to_remove):
             for word in words_to_remove:
                 text = text.replace(word, '')
             return text
 
-        # Open text file in write mode
         with open(txt_file, 'w') as file:
-            # Recursively extract & clean text from XML tree
+            entry_n = None
+
+            # Recursively extracts text from XML and writes cleaned content to TXT
             def extract_text(element):
-                # Check for <div> entry_notes containing margin text
-                if element.tag == '{http://www.tei-c.org/ns/1.0}div' and element.attrib.get("type") == "entry_notes":
-                    place_note = [note for note in root.findall('.//tei:note[@place]', namespaces=ns) if 'place' in note.attrib]
-                    for note in place_note:
-                        place = note.attrib.get('place', '')
+                global entry_n
+                if element.tag == '{http://www.tei-c.org/ns/1.0}div' and element.attrib.get("type") == "entry":
+                    entry_n = element.attrib.get("n")
+                elif element.tag == '{http://www.tei-c.org/ns/1.0}div' and element.attrib.get("type") == "entry_notes":
+                    place_notes = root.findall('.//tei:note[@place]', namespaces=ns)
+                    for note in place_notes:
                         text = note.text.strip() if note.text else ""
-                        # Get page number from the "place" attribute
-                        if "page" in place:
-                            page_number = place.split("page")[-1].strip()
-                            # Check if (page_number, text) is in matched_set
-                            if (page_number, text) in matched_notes:
-                                return #stop processing
+                        if (entry_n, text) in matched_notes:
+                            return #Skip writing this note because it is matched
                 
-                # If element has text, clean and write into TXT
+                # Writes cleaned text content to TXT
                 if element.text:
                     clean_text = remove_words(element.text, words_to_remove)
                     file.write(clean_text.strip() + '\n')
-
-                # Recursively extract text from children
                 for child in element:
                     extract_text(child)
-
-                # Handle element tail text if present
                 if element.tail:
                     cleaned_tail = remove_words(element.tail, words_to_remove)
                     file.write(cleaned_tail.strip() + '\n')
-
-            # Start extracting from the root element
+            
             extract_text(root)
     
     except ET.ParseError:
@@ -121,11 +135,5 @@ def xml_to_txt(xml_file, txt_file, words_to_remove):
     except IOError as e:
         print(f"Error: {e}")
 
-# Set desired XML, TXT using pathname
-xml_file = '/Users/chelsea/SDP files/SDP/texts/diary55SHORT.xml'
-txt_file = '/Users/chelsea/SDP files/SDP/texts/diary55SHORT.txt'
-words_to_remove = ['[torn]', '[struck through]', '[strikethrough]', '[illegible]', '[crossed out]', '[Arabic]'] # List of words to exclude in TXT
-
-# Run XML to TXT function
 xml_to_txt(xml_file, txt_file, words_to_remove)
-print("TXT file has been generated.")
+print("TXT file created")
