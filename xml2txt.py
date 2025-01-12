@@ -10,6 +10,7 @@ from xml.etree.ElementTree import SubElement, ElementTree, tostring
 ns = {'tei': 'http://www.tei-c.org/ns/1.0'}
 # Set desired XML, TXT using pathname
 xml_file = '/Users/chelsea/Downloads/55test.xml' #REPLACE WITH OWN PATHNAME
+modified_xml = '/Users/chelsea/Downloads/modified55test.xml' #REPLACE WITH OWN PATHNAME
 txt_file = '/Users/chelsea/Downloads/55test.txt' #REPLACE WITH OWN PATHNAME 
 words_to_remove = ['[torn]', '[struck through]', '[strikethrough]', '[illegible]', '[crossed out]', '[Arabic]'] # List of words to exclude in TXT
 tree = ET.parse(xml_file)
@@ -30,9 +31,9 @@ def extract_margin_notes(root, ns):
         # Get margin text, add to margin_notes
         if elem.tag == '{http://www.tei-c.org/ns/1.0}note' and elem.attrib.get("place") == "margin":
                 note_text = ''.join(elem.itertext()).strip()
-                page = elem.attrib.get("target")
+                location = elem.attrib.get("target")
                 if current_e:
-                    margin_notes[current_e] = (note_text, page)
+                    margin_notes[current_e] = (note_text, location)
 
     return margin_notes
 
@@ -61,7 +62,7 @@ def find_matches(root, ns):
                     print(f"Match found for entry xml:id={current_e}")
                     store_match(matched_notes, current_e, note_text)
                     processed_entries.add(current_e)
-  
+
             # Reset for new page
             current_page_text = ""
 
@@ -88,12 +89,34 @@ def find_matches(root, ns):
 matched_notes, _ = find_matches(root, ns)
 _, unmatched_notes = find_matches(root, ns)
 
+def insert_margin(unmatched_notes, root):
+    current_e = None
+    for e, (note_text, location) in unmatched_notes:
+        page = str(location[1])
+        for elem in root.iter():
+            if elem.tag == '{http://www.tei-c.org/ns/1.0}div' and elem.attrib.get("type") == "entry":
+                current_e = elem.attrib.get("{http://www.w3.org/XML/1998/namespace}id")
+            if current_e == e and elem.tag == '{http://www.tei-c.org/ns/1.0}pb' and elem.attrib.get("n") == page:
+                print("Inserting")
+                margin_element = ET.Element("note", place="margin", target=location, xml_id="e1_n1")
+                margin_element.text = note_text
+                elem.insert(0, margin_element)
+                # Now remove the old <note> tag if it exists
+                for child_note in elem.findall('.//tei:note[@place="margin"]', ns):
+                    if child_note.attrib.get('target') == location:
+                        print("Removing old note")
+                        elem.remove(child_note)
+
+insert_margin(unmatched_notes, root)
+tree.write(modified_xml)
+print("Modified XML file created")
+
 # Reads XML, extracts textual content, removes specified tags, and writes cleaned text to a new TXT file
 # Output: TXT file containing cleaned and formatted textual content from XML
-def xml_to_txt(xml_file, txt_file, words_to_remove):
+def xml_to_txt(modified_xml, txt_file, words_to_remove):
     try:
         # Parse the XML file
-        tree = ET.parse(xml_file)
+        tree = ET.parse(modified_xml)
         root = tree.getroot()
         
         # Helper method to exclude specific words found in XML from TXT and replace with empty string
@@ -134,7 +157,7 @@ def xml_to_txt(xml_file, txt_file, words_to_remove):
     except IOError as e:
         print(f"Error: {e}")
 
-xml_to_txt(xml_file, txt_file, words_to_remove)
+xml_to_txt(modified_xml, txt_file, words_to_remove)
 print("Matched Notes:", matched_notes)
 print("Unmatched Notes:", unmatched_notes)
 print("TXT file created")
